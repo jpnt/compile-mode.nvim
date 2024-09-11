@@ -119,6 +119,8 @@ local runjob = a.wrap(function(cmd, bufnr, param, callback)
 	local count = 0
 	local partial_line = ""
 	local output_lines = {}
+	local batch_size = 50
+	local throttle_time = 50
 
 	-- Handle both stdout and stderr
 	local on_output = function(_, data)
@@ -141,12 +143,13 @@ local runjob = a.wrap(function(cmd, bufnr, param, callback)
 		count = count + #data
 
 		-- Write lines to the buffer in chunks
-		if #output_lines >= 100 then  -- Adjust size for performance
+		if #output_lines >= batch_size then
 			vim.schedule(function()
 				set_lines(bufnr, -1, -1, output_lines)
-				output_lines = {}  -- Clear buffer after writing
+				output_lines = {}
 				M._parse_errors(bufnr)
 			end)
+			utils.delay(throttle_time)
 		end
 	end
 

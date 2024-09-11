@@ -118,41 +118,57 @@ local runjob = a.wrap(function(cmd, bufnr, param, callback)
 
 	local count = 0
 	local partial_line = ""
+	local output_lines = {}
 
-	local on_either = a.void(function(_, data)
-		if not data or #data < 1 or (#data == 1 and data[1] == "") then
+	-- Handle both stdout and stderr
+	local on_output = function(_, data)
+		if not data or #data < 1 then
 			return
 		end
 
-		count = count + #data
-
-		local new_lines = { partial_line .. data[1] }
-		table.move(data, 2, #data, #new_lines + 1, new_lines)
-		partial_line = new_lines[#new_lines]
-
-		for i, line in ipairs(new_lines) do
-			for _, re in ipairs(config.hidden_output) do
-				line = vim.fn.substitute(line, re, "", "")
-				new_lines[i] = line
-			end
+		-- Append partial lines and handle complete lines
+		if partial_line ~= "" then
+			data[1] = partial_line .. data[1]
+			partial_line = ""
+		end
+		if data[#data] ~= "" then
+			partial_line = data[#data]
+			data[#data] = nil
 		end
 
-		set_lines(bufnr, -2, -1, new_lines)
-		utils.wait()
-		M._parse_errors(bufnr)
-	end)
+		-- Append new data to output_lines
+		vim.list_extend(output_lines, data)
+		count = count + #data
+
+		-- Write lines to the buffer in chunks
+		if #output_lines >= 100 then  -- Adjust size for performance
+			vim.schedule(function()
+				set_lines(bufnr, -1, -1, output_lines)
+				output_lines = {}  -- Clear buffer after writing
+				M._parse_errors(bufnr)
+			end)
+		end
+	end
 
 	log.debug("starting job...")
 	local job_id = vim.fn.jobstart(cmd, {
 		cwd = vim.g.compilation_directory,
-		on_stdout = on_either,
-		on_stderr = on_either,
+		on_stdout = on_output,
+		on_stderr = on_output,
 		on_exit = function(id, code)
+			-- Final write of any remaining lines
+			if #output_lines > 0 then
+				vim.schedule(function()
+					set_lines(bufnr, -1, -1, output_lines)
+					M._parse_errors(bufnr)
+				end)
+			end
 			callback(count, code, id)
 		end,
 		env = config.environment,
 		clear_env = config.clear_environment,
 	})
+
 	log.fmt_debug("job_id = %d", job_id)
 
 	if job_id <= 0 then

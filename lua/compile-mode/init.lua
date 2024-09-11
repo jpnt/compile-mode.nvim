@@ -119,8 +119,11 @@ local runjob = a.wrap(function(cmd, bufnr, param, callback)
 	local count = 0
 	local partial_line = ""
 	local output_lines = {}
-	local batch_size = 50
-	local throttle_time = 50
+	local batch_size = 200
+	local throttle_time = 100
+
+	-- Lock the buffer for the entire job duration
+	utils.buf_set_opt(bufnr, "modifiable", true)
 
 	-- Handle both stdout and stderr
 	local on_output = function(_, data)
@@ -147,8 +150,8 @@ local runjob = a.wrap(function(cmd, bufnr, param, callback)
 			vim.schedule(function()
 				set_lines(bufnr, -1, -1, output_lines)
 				output_lines = {}
-				M._parse_errors(bufnr)
 			end)
+			-- Avoid blocking UI
 			utils.delay(throttle_time)
 		end
 	end
@@ -163,9 +166,17 @@ local runjob = a.wrap(function(cmd, bufnr, param, callback)
 			if #output_lines > 0 then
 				vim.schedule(function()
 					set_lines(bufnr, -1, -1, output_lines)
-					M._parse_errors(bufnr)
 				end)
 			end
+
+			-- Unlock buffer after everything is written
+			vim.schedule(function()
+				utils.buf_set_opt(bufnr, "modifiable", false)
+				utils.buf_set_opt(bufnr, "modified", false)
+				-- Parse errors once after the whole job finishes
+				M._parse_errors(bufnr)
+			end)
+
 			callback(count, code, id)
 		end,
 		env = config.environment,

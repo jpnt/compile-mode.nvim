@@ -245,7 +245,6 @@ local runcommand = a.void(function(command, param)
 
 	local prev_win = vim.api.nvim_get_current_win()
 	local bufnr = utils.split_unless_open({ fname = config.buffer_name }, param.smods, param.count)
-	utils.wait()
 	vim.api.nvim_set_current_win(prev_win)
 	log.fmt_debug("bufnr = %d", bufnr)
 
@@ -254,7 +253,6 @@ local runcommand = a.void(function(command, param)
 
 	-- reset compilation buffer
 	set_lines(bufnr, 0, -1, {})
-	utils.wait()
 
 	local error = errors.parse(command, 4)
 	if error then
@@ -268,14 +266,16 @@ local runcommand = a.void(function(command, param)
 		command,
 	})
 
-	utils.wait()
 	errors.highlight(bufnr)
 
 	log.fmt_debug("running command: `%s`", string.gsub(command, "\\`", "\\`"))
+
 	local line_count, code, job_id = runjob(command, bufnr, param)
+
 	if job_id ~= vim.g.compile_job_id then
 		return
 	end
+
 	vim.g.compile_job_id = nil
 
 	if line_count == 0 then
@@ -310,8 +310,6 @@ local runcommand = a.void(function(command, param)
 			bufnr = bufnr,
 		},
 	})
-
-	utils.wait()
 end)
 
 ---Create a command that takes some action on the next/previous error from the current error cursor.
